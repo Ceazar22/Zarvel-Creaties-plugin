@@ -193,6 +193,36 @@
   text-transform: uppercase;
 }
 
+.zc-portal-request-payment {
+  width: fit-content;
+  min-height: 40px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  padding: 0 16px;
+  color: #ffffff;
+  background: #ff5b1a;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 950;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zc-portal-request-payment.is-payable:hover {
+  color: #ffffff;
+  background: #050505;
+}
+
+.zc-portal-request-payment.is-paid {
+  min-height: 32px;
+  border-radius: 999px;
+  background: #e2f6e8;
+  color: #075b24;
+  font-size: 12px;
+}
+
 .zc-portal-orders article,
 .zc-portal-metrics article {
   min-height: 96px;
