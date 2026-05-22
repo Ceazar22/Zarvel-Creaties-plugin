@@ -11,13 +11,14 @@ defined('ABSPATH') || exit;
 
 const ZARVEL_PORTAL_COOKIE = 'zarvel_portal_session';
 const ZARVEL_PORTAL_SESSION_DAYS = 14;
+const ZARVEL_PORTAL_CUSTOMER_TYPE = 'zarvel_customer';
 
 function zarvel_portal_account_url() {
     return home_url('/my-account/');
 }
 
 function zarvel_portal_register_customer_type() {
-    register_post_type('zarvel_portal_customer', array(
+    register_post_type(ZARVEL_PORTAL_CUSTOMER_TYPE, array(
         'labels' => array(
             'name'          => __('Zarvel Customers', 'zarvel-customer-portal'),
             'singular_name' => __('Zarvel Customer', 'zarvel-customer-portal'),
@@ -25,7 +26,7 @@ function zarvel_portal_register_customer_type() {
         ),
         'public'          => false,
         'show_ui'         => true,
-        'show_in_menu'    => 'zarvel-portal',
+        'show_in_menu'    => false,
         'supports'        => array('title'),
         'capability_type' => 'post',
     ));
@@ -37,28 +38,100 @@ function zarvel_portal_admin_overview() {
         return;
     }
 
-    $customer_counts = wp_count_posts('zarvel_portal_customer');
+    $customer_counts = wp_count_posts(ZARVEL_PORTAL_CUSTOMER_TYPE);
     $customer_count = !empty($customer_counts->private) ? (int) $customer_counts->private : 0;
     $request_counts = post_type_exists('zarvel_design_request') ? wp_count_posts('zarvel_design_request') : null;
     $request_count = $request_counts && !empty($request_counts->private) ? (int) $request_counts->private : 0;
+    $customer_ids = get_posts(array(
+        'post_type'      => ZARVEL_PORTAL_CUSTOMER_TYPE,
+        'post_status'    => 'private',
+        'fields'         => 'ids',
+        'posts_per_page' => 100,
+        'orderby'        => 'date',
+        'order'          => 'DESC',
+    ));
     ?>
     <div class="wrap">
         <h1><?php esc_html_e('Zarvel Portal', 'zarvel-customer-portal'); ?></h1>
-        <p><?php esc_html_e('Manage frontend Zarvel customer accounts, private products, and design request follow-up.', 'zarvel-customer-portal'); ?></p>
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:24px;">
-            <a class="button button-primary" href="<?php echo esc_url(admin_url('edit.php?post_type=zarvel_portal_customer')); ?>">
-                <?php echo esc_html(sprintf(__('Customers (%d)', 'zarvel-customer-portal'), $customer_count)); ?>
-            </a>
-            <a class="button" href="<?php echo esc_url(admin_url('edit.php?post_type=zarvel_design_request')); ?>">
-                <?php echo esc_html(sprintf(__('Design Requests (%d)', 'zarvel-customer-portal'), $request_count)); ?>
+        <p><?php esc_html_e('Manage Zarvel customer emails, private products, orders, and design request follow-up here in WordPress.', 'zarvel-customer-portal'); ?></p>
+        <div class="zc-portal-admin-metrics">
+            <article>
+                <span><?php esc_html_e('Portal Customers', 'zarvel-customer-portal'); ?></span>
+                <strong><?php echo esc_html(number_format_i18n($customer_count)); ?></strong>
+            </article>
+            <article>
+                <span><?php esc_html_e('Design Requests', 'zarvel-customer-portal'); ?></span>
+                <strong><?php echo esc_html(number_format_i18n($request_count)); ?></strong>
+            </article>
+        </div>
+        <p class="zc-portal-admin-actions">
+            <a class="button button-primary" href="<?php echo esc_url(admin_url('edit.php?post_type=zarvel_design_request')); ?>">
+                <?php esc_html_e('Open Design Requests', 'zarvel-customer-portal'); ?>
             </a>
             <a class="button" href="<?php echo esc_url(admin_url('edit.php?post_type=product')); ?>">
-                <?php esc_html_e('Private Products', 'zarvel-customer-portal'); ?>
+                <?php esc_html_e('Open Products', 'zarvel-customer-portal'); ?>
             </a>
+        </p>
+        <h2><?php esc_html_e('Customers', 'zarvel-customer-portal'); ?></h2>
+        <div class="zc-portal-admin-table">
+            <table class="widefat striped">
+                <thead>
+                    <tr>
+                        <th><?php esc_html_e('Gmail', 'zarvel-customer-portal'); ?></th>
+                        <th><?php esc_html_e('Orders', 'zarvel-customer-portal'); ?></th>
+                        <th><?php esc_html_e('Paid Orders', 'zarvel-customer-portal'); ?></th>
+                        <th><?php esc_html_e('Total Spent', 'zarvel-customer-portal'); ?></th>
+                        <th><?php esc_html_e('Design Requests', 'zarvel-customer-portal'); ?></th>
+                        <th><?php esc_html_e('Private Products', 'zarvel-customer-portal'); ?></th>
+                        <th><?php esc_html_e('Added', 'zarvel-customer-portal'); ?></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php if (!$customer_ids) : ?>
+                        <tr>
+                            <td colspan="7"><?php esc_html_e('Customers will appear here after they verify a Gmail code.', 'zarvel-customer-portal'); ?></td>
+                        </tr>
+                    <?php endif; ?>
+                    <?php foreach ($customer_ids as $customer_id) : ?>
+                        <?php
+                        $email = zarvel_portal_customer_email($customer_id);
+                        $orders = zarvel_portal_get_customer_orders($email, -1);
+                        $order_summary = zarvel_portal_paid_order_summary($orders);
+                        $request_ids = zarvel_portal_get_design_request_ids($email);
+                        $product_ids = zarvel_portal_get_private_product_ids($email);
+                        ?>
+                        <tr>
+                            <td>
+                                <strong><?php echo esc_html($email); ?></strong>
+                            </td>
+                            <td><?php echo esc_html(number_format_i18n(count($orders))); ?></td>
+                            <td><?php echo esc_html(number_format_i18n($order_summary['count'])); ?></td>
+                            <td><?php echo wp_kses_post(function_exists('wc_price') ? wc_price($order_summary['spent']) : '$' . number_format($order_summary['spent'], 2)); ?></td>
+                            <td><?php echo esc_html(number_format_i18n(count($request_ids))); ?></td>
+                            <td><?php echo esc_html(number_format_i18n(count($product_ids))); ?></td>
+                            <td><?php echo esc_html(get_the_date('', $customer_id)); ?></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
         </div>
     </div>
     <?php
 }
+
+add_action('admin_head-toplevel_page_zarvel-portal', function () {
+    ?>
+    <style>
+        .zc-portal-admin-metrics { display: flex; gap: 16px; flex-wrap: wrap; margin: 22px 0 14px; }
+        .zc-portal-admin-metrics article { min-width: 180px; padding: 18px 20px; border: 1px solid #dcdcde; background: #fff; }
+        .zc-portal-admin-metrics span { display: block; margin-bottom: 8px; color: #50575e; font-weight: 600; }
+        .zc-portal-admin-metrics strong { display: block; font-size: 30px; line-height: 1; }
+        .zc-portal-admin-actions { margin: 0 0 26px; }
+        .zc-portal-admin-table { max-width: 1280px; }
+        .zc-portal-admin-table td, .zc-portal-admin-table th { vertical-align: middle; }
+    </style>
+    <?php
+});
 
 add_action('admin_menu', function () {
     add_menu_page(
@@ -80,7 +153,7 @@ function zarvel_portal_find_customer_by_email($email) {
     }
 
     $customer_ids = get_posts(array(
-        'post_type'      => 'zarvel_portal_customer',
+        'post_type'      => ZARVEL_PORTAL_CUSTOMER_TYPE,
         'post_status'    => 'private',
         'fields'         => 'ids',
         'posts_per_page' => 1,
@@ -149,7 +222,7 @@ function zarvel_portal_current_customer_id() {
     if (
         !$customer_id ||
         !$token ||
-        get_post_type($customer_id) !== 'zarvel_portal_customer' ||
+        get_post_type($customer_id) !== ZARVEL_PORTAL_CUSTOMER_TYPE ||
         !$stored_hash ||
         !$expires ||
         $expires < time() ||
@@ -186,7 +259,7 @@ function zarvel_portal_create_customer($email) {
     }
 
     $customer_id = wp_insert_post(array(
-        'post_type'   => 'zarvel_portal_customer',
+        'post_type'   => ZARVEL_PORTAL_CUSTOMER_TYPE,
         'post_status' => 'private',
         'post_title'  => $email,
     ), true);
@@ -284,13 +357,13 @@ function zarvel_portal_handle_account_actions() {
         zarvel_portal_redirect_with_status('code_invalid', array('portal_email' => $email));
     }
 
-    delete_transient(zarvel_portal_login_code_key($email));
     $customer_id = zarvel_portal_create_customer($email);
 
     if (!$customer_id) {
         zarvel_portal_redirect_with_status('failed');
     }
 
+    delete_transient(zarvel_portal_login_code_key($email));
     zarvel_portal_set_customer_session($customer_id);
     zarvel_portal_redirect_with_status('logged_in');
 }
@@ -437,7 +510,6 @@ function zarvel_customer_portal_shortcode() {
     $product_ids = zarvel_portal_get_private_product_ids($email);
     $request_ids = zarvel_portal_get_design_request_ids($email);
     $orders = zarvel_portal_get_customer_orders($email);
-    $order_summary = zarvel_portal_paid_order_summary(zarvel_portal_get_customer_orders($email, -1));
     $logout_url = wp_nonce_url(add_query_arg('zarvel_portal_logout', '1', zarvel_portal_account_url()), 'zarvel_portal_logout');
     ?>
     <div class="zc-portal-dashboard">
@@ -449,17 +521,7 @@ function zarvel_customer_portal_shortcode() {
             <a href="<?php echo esc_url($logout_url); ?>"><?php esc_html_e('Log Out', 'zarvel-customer-portal'); ?></a>
         </header>
         <section>
-            <h3><?php esc_html_e('Orders And Spend', 'zarvel-customer-portal'); ?></h3>
-            <div class="zc-portal-metrics">
-                <article>
-                    <span><?php esc_html_e('Paid Orders', 'zarvel-customer-portal'); ?></span>
-                    <strong><?php echo esc_html(number_format_i18n($order_summary['count'])); ?></strong>
-                </article>
-                <article>
-                    <span><?php esc_html_e('Total Spent', 'zarvel-customer-portal'); ?></span>
-                    <strong><?php echo wp_kses_post(function_exists('wc_price') ? wc_price($order_summary['spent']) : '$' . number_format($order_summary['spent'], 2)); ?></strong>
-                </article>
-            </div>
+            <h3><?php esc_html_e('Order Status', 'zarvel-customer-portal'); ?></h3>
             <?php if (!$orders) : ?>
                 <p><?php esc_html_e('Orders using this checkout email will appear here.', 'zarvel-customer-portal'); ?></p>
             <?php else : ?>
@@ -468,7 +530,6 @@ function zarvel_customer_portal_shortcode() {
                         <article>
                             <strong>#<?php echo esc_html($order->get_order_number()); ?></strong>
                             <span><?php echo esc_html(wc_get_order_status_name($order->get_status())); ?></span>
-                            <b><?php echo wp_kses_post($order->get_formatted_order_total()); ?></b>
                         </article>
                     <?php endforeach; ?>
                 </div>
